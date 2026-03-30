@@ -19,27 +19,28 @@ OpenClaw AI agent setup with OpenViking memory backend.
 # Install via npm (or pnpm)
 npm install -g openclaw
 
-# Initialize a new agent workspace
-openclaw init
+# Add Telegram channel
+openclaw channels add --channel telegram --token "$TELEGRAM_BOT_TOKEN"
 
-# Start the gateway
-openclaw gateway start
-```
+# Set gateway mode (required before first start)
+# Edit ~/.openclaw/openclaw.json and add "mode": "local" under the "gateway" key
 
-Configure your channel (Telegram, Discord, etc.):
+# Install and start the gateway as a systemd service
+openclaw gateway install
+systemctl --user start openclaw-gateway.service
 
-```bash
-# Edit the config
-openclaw config edit
-
-# For Telegram, add your bot token under channels.telegram
-# For Discord, add your bot token under channels.discord
+# Set up exec approvals for Telegram command execution
+openclaw approvals allowlist add "/usr/bin/*"
+openclaw approvals allowlist add "/usr/local/bin/*"
+openclaw approvals allowlist add "~/.local/bin/*"
+openclaw approvals allowlist add "~/openviking-env/bin/*"
 ```
 
 Verify it's running:
 
 ```bash
-openclaw status
+openclaw gateway status
+openclaw channels status
 ```
 
 > **Docs**: https://docs.openclaw.ai
@@ -105,8 +106,9 @@ Create `~/.openviking/ov.conf`:
 ```
 
 > **Note**: Replace `YOUR_USER` and `YOUR_OPENAI_API_KEY` with your actual values.
-> OpenViking also supports Volcengine (Doubao), Anthropic, Gemini, DeepSeek, Ollama, and more via LiteLLM.
+> OpenViking also supports Volcengine (Doubao), Anthropic, Gemini, DeepSeek, and Ollama.
 > See [provider docs](https://github.com/volcengine/OpenViking#2-model-preparation).
+> **Security**: Store API keys in a `.env` file (e.g., `~/.env.openclaw`) with `chmod 600`, not hardcoded in configs.
 
 ### 2.4 Test the server manually
 
@@ -142,7 +144,7 @@ After=network.target
 [Service]
 Type=simple
 Environment=OPENVIKING_CONFIG_FILE=/home/YOUR_USER/.openviking/ov.conf
-ExecStart=/home/YOUR_USER/openviking-env/bin/python3 -c "from openviking.server.app import create_app; import uvicorn; app = create_app(); uvicorn.run(app, host='127.0.0.1', port=1933)"
+ExecStart=/home/YOUR_USER/openviking-env/bin/start-openviking.sh
 Restart=on-failure
 RestartSec=5
 
@@ -150,9 +152,24 @@ RestartSec=5
 WantedBy=default.target
 ```
 
-Enable and start:
+Create the wrapper script `~/openviking-env/bin/start-openviking.sh`:
 
 ```bash
+#!/bin/bash
+export OPENVIKING_CONFIG_FILE=/home/YOUR_USER/.openviking/ov.conf
+exec /home/YOUR_USER/openviking-env/bin/python3 -c "
+from openviking.server.app import create_app
+import uvicorn
+app = create_app()
+uvicorn.run(app, host='127.0.0.1', port=1933)
+"
+```
+
+Make it executable and enable the service:
+
+```bash
+chmod +x ~/openviking-env/bin/start-openviking.sh
+
 # Allow user services to run without active login
 loginctl enable-linger $USER
 
@@ -164,6 +181,8 @@ systemctl --user start openviking.service
 # Verify
 systemctl --user status openviking.service
 ```
+
+> **Note**: Using a wrapper script instead of inline `-c` avoids systemd shell escaping issues.
 
 ---
 
