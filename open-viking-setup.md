@@ -7,9 +7,9 @@ OpenClaw AI agent setup with OpenViking memory backend.
 - **OS**: Linux (Ubuntu/Debian recommended), macOS, or Windows (WSL)
 - **Node.js**: v22+ (for OpenClaw)
 - **Python**: 3.10+ (for OpenViking)
-- **Go**: 1.22+ (for OpenViking AGFS components)
-- **GCC**: 9+ or Clang 11+ (for OpenViking core extensions)
 - **An OpenAI API key** (or another supported provider — see [OpenViking docs](https://github.com/volcengine/OpenViking))
+
+> **Note**: Go and GCC are NOT required — the OpenViking pip package includes pre-built AGFS binaries.
 
 ---
 
@@ -24,6 +24,9 @@ openclaw channels add --channel telegram --token "$TELEGRAM_BOT_TOKEN"
 
 # Set gateway mode (required before first start)
 # Edit ~/.openclaw/openclaw.json and add "mode": "local" under the "gateway" key
+
+# Allow user services to run without active login (needed for both OpenClaw and OpenViking)
+loginctl enable-linger $USER
 
 # Install and start the gateway as a systemd service
 openclaw gateway install
@@ -130,6 +133,8 @@ curl http://127.0.0.1:1933/health
 # Expected: {"status":"ok","healthy":true,"version":"...","user_id":"default"}
 ```
 
+> **Important**: Kill the test server (Ctrl+C) before proceeding to Step 3. The server holds a lock on the workspace directory — the systemd service will fail if the test process is still running.
+
 ---
 
 ## Step 3: Set Up OpenViking as a Systemd Service
@@ -170,10 +175,7 @@ Make it executable and enable the service:
 ```bash
 chmod +x ~/openviking-env/bin/start-openviking.sh
 
-# Allow user services to run without active login
-loginctl enable-linger $USER
-
-# Reload, enable, and start
+# Reload, enable, and start (linger already enabled in Step 1)
 systemctl --user daemon-reload
 systemctl --user enable openviking.service
 systemctl --user start openviking.service
@@ -270,13 +272,18 @@ OpenViking organizes context in scopes:
 
 ## Service Management
 
+Both services are managed via systemd (user-level):
+
 ```bash
-# OpenClaw
+# OpenClaw Gateway
+systemctl --user status openclaw-gateway
+systemctl --user restart openclaw-gateway
+systemctl --user stop openclaw-gateway
+journalctl --user -u openclaw-gateway -f
+
+# OpenClaw status/probe (uses the CLI against the running service)
 openclaw gateway status
-openclaw gateway start
-openclaw gateway stop
-openclaw gateway restart
-openclaw status
+openclaw channels status
 
 # OpenViking
 systemctl --user status openviking
@@ -284,6 +291,9 @@ systemctl --user restart openviking
 systemctl --user stop openviking
 journalctl --user -u openviking -f
 ```
+
+> **Note**: After updating `TOOLS.md` or `MEMORY.md`, restart the gateway for changes to take effect:
+> `systemctl --user restart openclaw-gateway`
 
 ---
 
